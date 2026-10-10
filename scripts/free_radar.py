@@ -8,12 +8,15 @@ import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
+import re
+import html
 
 now = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
 today = now.strftime('%Y-%m-%d')
 entries, errors, seen = [], [], set()
 MAX_AGE_HOURS = 72
 source_stats = {}
+entry_details = {}
 
 # Focus on original sources, not generic AI SEO blogs.
 BLOCKED_HOSTS = {'phpscientist.com'}
@@ -24,7 +27,7 @@ def fetch(url):
     with urllib.request.urlopen(req, timeout=20) as response:
         return response.read()
 
-def add(source, title, link, published=''):
+def add(source, title, link, published='', description=''):
     if not title or not link or not link.startswith('https://') or link in seen:
         return
     host = (urlparse(link).hostname or '').lower()
@@ -52,6 +55,7 @@ def add(source, title, link, published=''):
             pass
     seen.add(link)
     entries.append((source, title.strip(), link, published, age_hours))
+    entry_details[link] = re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', description or ''))).strip()[:1200]
     source_stats[source] = source_stats.get(source, 0) + 1
 
 feeds = [
@@ -120,7 +124,8 @@ for name, url in feeds:
                 element = item.find('{http://www.w3.org/2005/Atom}link')
                 link = element.get('href', '') if element is not None else ''
             published = item.findtext('pubDate', '') or item.findtext('{http://www.w3.org/2005/Atom}published', '')
-            add(name, title, link, published)
+            description = item.findtext('description', '') or item.findtext('{http://www.w3.org/2005/Atom}summary', '') or item.findtext('{http://www.w3.org/2005/Atom}content', '')
+            add(name, title, link, published, description)
     except Exception as exc:
         errors.append(f'{name}: {type(exc).__name__}: {exc}')
 
@@ -195,7 +200,7 @@ try:
     url = 'https://api.github.com/search/repositories?q=' + quote('topic:ai-agent pushed:>' + since) + '&sort=updated&order=desc&per_page=12'
     result = json.loads(fetch(url))
     for project in result.get('items', []):
-        add('GitHub 开发者动态', project.get('full_name', ''), project.get('html_url', ''), project.get('pushed_at', ''))
+        add('GitHub 开发者动态', project.get('full_name', ''), project.get('html_url', ''), project.get('pushed_at', ''), project.get('description', ''))
 except Exception as exc:
     errors.append(f'GitHub 开发者动态: {type(exc).__name__}: {exc}')
 
@@ -263,6 +268,12 @@ for category in ('重点：官方发布', '重点：创始人原话', '研究/�
     lines += [f'### {category}（{len(subset)}）', '']
     lines += [render(row) for row in subset] if subset else ['暂无']
     lines.append('')
+lines += ['## 直接阅读：15 条精选卡片', '', '摘录来自 RSS/API，不是 AI 翻译或事实核查。', '']
+for idx, row in enumerate(ranked[:15], 1):
+    source, title, link, published, age = row
+    category, score, reason = triage(row)
+    excerpt = entry_details.get(link, '').replace('|', '｜')
+    lines += [f'### {idx}. {title}', '', f'- **类别**：{category}', f'- **来源**：{source}｜**时间**：{published or "待核验"}', f'- **筛选理由**：{reason}', f'- **原文摘录**：{excerpt[:700] if excerpt else "没有可提取正文，需要打开原帖核实"}', f'- **原始出处**：{link}', '']
 lines += ['## 来源健康状态', '']
 for source, url in feeds:
     lines.append(f'- {source}：{source_stats.get(source, 0)} 条（0 条可能是没更新，也可能是采集失效）')
