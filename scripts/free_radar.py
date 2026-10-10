@@ -29,6 +29,12 @@ def add(source, title, link, published=''):
         return
     if source == 'Hacker News' and not any(term in title.lower() for term in PRIORITY_TERMS):
         return
+    if source.startswith('X ·'):
+        import re
+        match = re.search(r'/status/(\d+)', link)
+        handle = {'X · Sam Altman': 'sama', 'X · OpenAI': 'OpenAI', 'X · Anthropic': 'AnthropicAI', 'X · Andrej Karpathy': 'karpathy', 'X · Vitalik Buterin': 'VitalikButerin', 'X · CZ': 'cz_binance'}.get(source)
+        if match and handle:
+            link = f'https://x.com/{handle}/status/{match.group(1)}'
     seen.add(link)
     entries.append((source, title.strip(), link, published))
 
@@ -41,12 +47,27 @@ feeds = [
     ('Hugging Face 博客', 'https://huggingface.co/blog/feed.xml'),
     ('Ethereum Research', 'https://ethresear.ch/latest.rss'),
     ('Binance 官方公告', 'https://www.binance.com/en/support/announcement/rss'),
+    ('X · Sam Altman', 'https://fxtwitter.com/sama/feed.xml'),
+    ('X · OpenAI', 'https://fxtwitter.com/OpenAI/feed.xml'),
+    ('X · Anthropic', 'https://fxtwitter.com/AnthropicAI/feed.xml'),
+    ('X · Andrej Karpathy', 'https://fxtwitter.com/karpathy/feed.xml'),
+    ('X · Vitalik Buterin', 'https://fxtwitter.com/VitalikButerin/feed.xml'),
+    ('X · CZ', 'https://fxtwitter.com/cz_binance/feed.xml'),
 ]
 for name, url in feeds:
     try:
         root = ET.fromstring(fetch(url))
-        for item in root.findall('.//item')[:20]:
-            add(name, item.findtext('title', ''), item.findtext('link', ''), item.findtext('pubDate', ''))
+        items = root.findall('.//item')
+        if not items:
+            items = root.findall('.//{http://www.w3.org/2005/Atom}entry')
+        for item in items[:20]:
+            title = item.findtext('title', '') or item.findtext('{http://www.w3.org/2005/Atom}title', '')
+            link = item.findtext('link', '')
+            if not link:
+                element = item.find('{http://www.w3.org/2005/Atom}link')
+                link = element.get('href', '') if element is not None else ''
+            published = item.findtext('pubDate', '') or item.findtext('{http://www.w3.org/2005/Atom}published', '')
+            add(name, title, link, published)
     except Exception as exc:
         errors.append(f'{name}: {type(exc).__name__}: {exc}')
 
