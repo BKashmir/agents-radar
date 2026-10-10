@@ -30,7 +30,7 @@ def add(source, title, link, published=''):
     host = (urlparse(link).hostname or '').lower()
     if host in BLOCKED_HOSTS:
         return
-    if source == 'Hacker News' and not any(term in title.lower() for term in PRIORITY_TERMS):
+    if source.startswith('Hacker News') and not any(term in title.lower() for term in PRIORITY_TERMS):
         return
     if source.startswith('X ·'):
         import re
@@ -62,6 +62,8 @@ feeds = [
     ('Google Research', 'https://research.google/blog/rss/'),
     ('Hugging Face 博客', 'https://huggingface.co/blog/feed.xml'),
     ('Ethereum Research', 'https://ethresear.ch/latest.rss'),
+    ('Product Hunt', 'https://www.producthunt.com/feed'),
+    ('Hacker News 最新', 'https://hnrss.org/newest'),
     ('X · Sam Altman', 'https://fxtwitter.com/sama/feed.xml'),
     ('X · OpenAI', 'https://fxtwitter.com/OpenAI/feed.xml'),
     ('X · Anthropic', 'https://fxtwitter.com/AnthropicAI/feed.xml'),
@@ -122,6 +124,71 @@ for name, url in feeds:
     except Exception as exc:
         errors.append(f'{name}: {type(exc).__name__}: {exc}')
 
+# Additional public discovery endpoints; each is independently error-isolated.
+try:
+    data = json.loads(fetch('https://huggingface.co/api/daily_papers?limit=30'))
+    for paper in data:
+        p = paper.get('paper', {})
+        pid = p.get('id') or paper.get('id', '')
+        title = p.get('title') or paper.get('title', '')
+        published = paper.get('publishedAt') or p.get('publishedAt', '')
+        if pid:
+            add('Hugging Face Papers', title, 'https://huggingface.co/papers/' + pid, published)
+except Exception as exc:
+    errors.append(f'Hugging Face Papers: {type(exc).__name__}: {exc}')
+
+try:
+    data = json.loads(fetch('https://huggingface.co/api/models?sort=createdAt&direction=-1&limit=40'))
+    for model in data:
+        mid = model.get('id', '')
+        if mid:
+            add('Hugging Face 新模型', mid, 'https://huggingface.co/' + mid, model.get('createdAt', ''))
+except Exception as exc:
+    errors.append(f'Hugging Face 新模型: {type(exc).__name__}: {exc}')
+
+try:
+    import re
+    html = fetch('https://github.com/trending?since=daily').decode('utf-8', errors='replace')
+    paths = re.findall(r'<h2[^>]*class="[^"]*h3[^"]*"[^>]*>\\s*<a[^>]*href="/([^"/]+/[^"/?#]+)"', html, re.I)
+    for path in dict.fromkeys(paths):
+        add('GitHub Trending', path.replace('/', ' / ', 1), 'https://github.com/' + path, '')
+except Exception as exc:
+    errors.append(f'GitHub Trending: {type(exc).__name__}: {exc}')
+
+try:
+    data = json.loads(fetch('https://api.coingecko.com/api/v3/search/trending'))
+    for coin in data.get('coins', [])[:15]:
+        item = coin.get('item', {})
+        cid = item.get('id', '')
+        if cid:
+            add('CoinGecko 热门', item.get('name', cid), 'https://www.coingecko.com/en/coins/' + cid, '')
+except Exception as exc:
+    errors.append(f'CoinGecko 热门: {type(exc).__name__}: {exc}')
+
+try:
+    data = json.loads(fetch('https://api.llama.fi/protocols'))
+    protocols = sorted((p for p in data if isinstance(p.get('change_1d'), (float, int)) and (p.get('tvl') or 0) > 10000000), key=lambda p: p['change_1d'], reverse=True)
+    for protocol in protocols[:12]:
+        slug = protocol.get('slug', '')
+        if slug:
+            add('DefiLlama 资金异动', f"{protocol.get('name', slug)} TVL 24h {protocol['change_1d']:+.1f}%", 'https://defillama.com/protocol/' + slug, '')
+except Exception as exc:
+    errors.append(f'DefiLlama 资金异动: {type(exc).__name__}: {exc}')
+
+# SEC EDGAR official RSS search feed: public filings are not necessarily AI news.
+try:
+    url = 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&owner=include&count=20&output=atom'
+    root = ET.fromstring(fetch(url))
+    ns = '{http://www.w3.org/2005/Atom}'
+    for item in root.findall('.//' + ns + 'entry')[:20]:
+        title = item.findtext(ns + 'title', '')
+        link_el = item.find(ns + 'link')
+        link = link_el.get('href', '') if link_el is not None else ''
+        published = item.findtext(ns + 'updated', '')
+        add('SEC EDGAR 8-K', title, link, published)
+except Exception as exc:
+    errors.append(f'SEC EDGAR 8-K: {type(exc).__name__}: {exc}')
+
 # Public GitHub repository search: recent activity from original builders.
 try:
     since = (now - dt.timedelta(days=3)).strftime('%Y-%m-%d')
@@ -169,6 +236,12 @@ def triage(row):
         return ('Web3/市场动态', 3, '市场关键词，非交易建议')
     if original:
         return ('原始渠道动态', 3, '官方或开发者来源，未核验首发')
+    if source in ('Product Hunt', 'Hugging Face 新模型', 'GitHub Trending', 'Hugging Face Papers'):
+        return ('产品/开源新发现', 3, '新项目或论文线索，需核对发布时间和实用性')
+    if source in ('CoinGecko 热门', 'DefiLlama 资金异动'):
+        return ('Web3/市场动态', 2, '市场指标快照，不等于消息或投资建议')
+    if source == 'SEC EDGAR 8-K':
+        return ('官方监管披露', 2, '监管文件需确认公司及事项是否相关')
     if source == 'GitHub 开发者动态':
         return ('开发者活动', 2, '代码活跃不等于重大产品发布')
     return ('普通线索', 1, '需要寻找原始出处')
@@ -185,7 +258,7 @@ ranked = sorted(entries, key=lambda r: (-triage(r)[1], r[4] is None, r[4] if r[4
 for row in ranked[:15]:
     lines.append(render(row))
 lines += ['', '## 按新闻性质分类', '']
-for category in ('重点：官方发布', '重点：创始人原话', '研究/论文', 'Web3/市场动态', '原始渠道动态', '开发者活动', '普通线索', '转发/二手线索', '广告/营销候选'):
+for category in ('重点：官方发布', '重点：创始人原话', '研究/论文', 'Web3/市场动态', '原始渠道动态', '产品/开源新发现', '官方监管披露', '开发者活动', '普通线索', '转发/二手线索', '广告/营销候选'):
     subset = [row for row in ranked if triage(row)[0] == category]
     lines += [f'### {category}（{len(subset)}）', '']
     lines += [render(row) for row in subset] if subset else ['暂无']
