@@ -35,7 +35,7 @@ def add(source, title, link, published=''):
     if source.startswith('X ·'):
         import re
         match = re.search(r'/status/(\d+)', link)
-        handle = {'X · Sam Altman': 'sama', 'X · OpenAI': 'OpenAI', 'X · Anthropic': 'AnthropicAI', 'X · Andrej Karpathy': 'karpathy', 'X · Vitalik Buterin': 'VitalikButerin', 'X · CZ': 'cz_binance'}.get(source)
+        handle = {"X · Sam Altman":"sama","X · OpenAI":"OpenAI","X · Anthropic":"AnthropicAI","X · Andrej Karpathy":"karpathy","X · Vitalik Buterin":"VitalikButerin","X · CZ":"cz_binance","X · Elon Musk":"elonmusk","X · Google DeepMind":"GoogleDeepMind","X · Google AI":"GoogleAI","X · Demis Hassabis":"demishassabis","X · Sundar Pichai":"sundarpichai","X · Jeff Dean":"JeffDean","X · Yann LeCun":"ylecun","X · Andrew Ng":"AndrewYNg","X · Hugging Face":"huggingface","X · Clement Delangue":"ClementDelangue","X · Mistral AI":"MistralAI","X · Meta AI":"AIatMeta","X · GitHub":"github","X · GitHub Copilot":"GitHubCopilot","X · LangChain":"LangChainAI","X · Cursor":"cursor_ai","X · Perplexity":"perplexity_ai","X · Satya Nadella":"satyanadella","X · Microsoft Research":"MSFTResearch","X · Cloudflare":"Cloudflare","X · Vercel":"vercel","X · Solana":"solana","X · Anatoly Yakovenko":"aeyakovenko","X · Ethereum Foundation":"ethereumfndn","X · Coinbase":"coinbase","X · Brian Armstrong":"brian_armstrong","X · Binance":"binance","X · OKX":"okx","X · Star Xu":"star_okx","X · Jesse Pollak":"jessepollak","X · DefiLlama":"DefiLlama","X · a16z crypto":"a16zcrypto","X · Paradigm":"paradigm","X · Balaji Srinivasan":"balajis","X · Arthur Hayes":"CryptoHayes","X · Justin Sun":"justinsuntron"}.get(source)
         if match and handle:
             link = f'https://x.com/{handle}/status/{match.group(1)}'
     # Reject stale content, rather than resurfacing old announcements as breaking news.
@@ -68,6 +68,42 @@ feeds = [
     ('X · Andrej Karpathy', 'https://fxtwitter.com/karpathy/feed.xml'),
     ('X · Vitalik Buterin', 'https://fxtwitter.com/VitalikButerin/feed.xml'),
     ('X · CZ', 'https://fxtwitter.com/cz_binance/feed.xml'),
+    ('X · Elon Musk', 'https://fxtwitter.com/elonmusk/feed.xml'),
+    ('X · Google DeepMind', 'https://fxtwitter.com/GoogleDeepMind/feed.xml'),
+    ('X · Google AI', 'https://fxtwitter.com/GoogleAI/feed.xml'),
+    ('X · Demis Hassabis', 'https://fxtwitter.com/demishassabis/feed.xml'),
+    ('X · Sundar Pichai', 'https://fxtwitter.com/sundarpichai/feed.xml'),
+    ('X · Jeff Dean', 'https://fxtwitter.com/JeffDean/feed.xml'),
+    ('X · Yann LeCun', 'https://fxtwitter.com/ylecun/feed.xml'),
+    ('X · Andrew Ng', 'https://fxtwitter.com/AndrewYNg/feed.xml'),
+    ('X · Hugging Face', 'https://fxtwitter.com/huggingface/feed.xml'),
+    ('X · Clement Delangue', 'https://fxtwitter.com/ClementDelangue/feed.xml'),
+    ('X · Mistral AI', 'https://fxtwitter.com/MistralAI/feed.xml'),
+    ('X · Meta AI', 'https://fxtwitter.com/AIatMeta/feed.xml'),
+    ('X · GitHub', 'https://fxtwitter.com/github/feed.xml'),
+    ('X · GitHub Copilot', 'https://fxtwitter.com/GitHubCopilot/feed.xml'),
+    ('X · LangChain', 'https://fxtwitter.com/LangChainAI/feed.xml'),
+    ('X · Cursor', 'https://fxtwitter.com/cursor_ai/feed.xml'),
+    ('X · Perplexity', 'https://fxtwitter.com/perplexity_ai/feed.xml'),
+    ('X · Satya Nadella', 'https://fxtwitter.com/satyanadella/feed.xml'),
+    ('X · Microsoft Research', 'https://fxtwitter.com/MSFTResearch/feed.xml'),
+    ('X · Cloudflare', 'https://fxtwitter.com/Cloudflare/feed.xml'),
+    ('X · Vercel', 'https://fxtwitter.com/vercel/feed.xml'),
+    ('X · Solana', 'https://fxtwitter.com/solana/feed.xml'),
+    ('X · Anatoly Yakovenko', 'https://fxtwitter.com/aeyakovenko/feed.xml'),
+    ('X · Ethereum Foundation', 'https://fxtwitter.com/ethereumfndn/feed.xml'),
+    ('X · Coinbase', 'https://fxtwitter.com/coinbase/feed.xml'),
+    ('X · Brian Armstrong', 'https://fxtwitter.com/brian_armstrong/feed.xml'),
+    ('X · Binance', 'https://fxtwitter.com/binance/feed.xml'),
+    ('X · OKX', 'https://fxtwitter.com/okx/feed.xml'),
+    ('X · Star Xu', 'https://fxtwitter.com/star_okx/feed.xml'),
+    ('X · Jesse Pollak', 'https://fxtwitter.com/jessepollak/feed.xml'),
+    ('X · DefiLlama', 'https://fxtwitter.com/DefiLlama/feed.xml'),
+    ('X · a16z crypto', 'https://fxtwitter.com/a16zcrypto/feed.xml'),
+    ('X · Paradigm', 'https://fxtwitter.com/paradigm/feed.xml'),
+    ('X · Balaji Srinivasan', 'https://fxtwitter.com/balajis/feed.xml'),
+    ('X · Arthur Hayes', 'https://fxtwitter.com/CryptoHayes/feed.xml'),
+    ('X · Justin Sun', 'https://fxtwitter.com/justinsuntron/feed.xml'),
 ]
 for name, url in feeds:
     try:
