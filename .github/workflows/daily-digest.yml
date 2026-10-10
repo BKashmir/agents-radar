@@ -1,17 +1,7 @@
 name: Daily Agents Radar
 
 on:
-  schedule:
-    # 22:37 UTC daily = 06:37 CST (UTC+8) the next day. A ~20 min run started
-    # then lands the digest around 07:00 CST, which is when it is expected.
-    #
-    # The minute is deliberately off the hour. GitHub queues scheduled runs and
-    # drops them under load, and the :00 slot is the most contended one. At
-    # "0 23 * * *" this workflow degraded badly in August 2026: the 08-26 run
-    # was dispatched 5h07m late and the 08-27 run was never created at all.
-    # qwen-flash has flat pricing, so moving the slot costs nothing (it would
-    # have, under DeepSeek's peak/off-peak scheme).
-    - cron: "37 22 * * *"
+  # Paid Qwen workflow: manual-only until DASHSCOPE_API_KEY is configured.
   workflow_dispatch:
 
 permissions:
