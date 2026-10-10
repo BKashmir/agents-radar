@@ -283,6 +283,82 @@ lines += [f'- {e}' for e in errors] if errors else ['无']
 out = pathlib.Path('radar') / f'{today}.md'
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+# Persistent major-news inbox. This is a candidate queue, NOT an AI-verified news feed.
+# The handled.json file can be edited manually; the collector never resets its statuses.
+history_path = pathlib.Path('radar/major-news-history.json')
+handled_path = pathlib.Path('radar/handled.json')
+try:
+    history = json.loads(history_path.read_text(encoding='utf-8')) if history_path.exists() else {}
+    if not isinstance(history, dict):
+        history = {}
+except (ValueError, OSError):
+    history = {}
+try:
+    handled = json.loads(handled_path.read_text(encoding='utf-8')) if handled_path.exists() else {}
+    if not isinstance(handled, dict):
+        handled = {}
+except (ValueError, OSError):
+    handled = {}
+
+# Prefer substantive official releases; founder remarks alone can be low-information.
+# Use stable original URLs as identifiers, so rediscovery does not create new items.
+for row in ranked:
+    source, title, link, published, age = row
+    category, score, reason = triage(row)
+    if score < 4 or category == '广告/营销候选':
+        continue
+    if age is None or not (0 <= age <= MAX_AGE_HOURS):
+        continue
+    if len(title.strip()) < 24:
+        continue
+    if link not in history:
+        history[link] = {'title': title, 'source': source, 'published': published,
+                         'first_seen': today, 'last_seen': today, 'category': category,
+                         'description': entry_details.get(link, '')[:450]}
+    else:
+        history[link]['last_seen'] = today
+        if entry_details.get(link) and not history[link].get('description'):
+            history[link]['description'] = entry_details[link][:450]
+
+# Keep the index bounded while preserving recent unhandled items.
+history = dict(sorted(history.items(), key=lambda kv: kv[1].get('first_seen', ''), reverse=True)[:1000])
+history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2) + '\\n', encoding='utf-8')
+if not handled_path.exists():
+    handled_path.write_text('{}\\n', encoding='utf-8')
+
+pending = [(url, item) for url, item in history.items()
+           if handled.get(url) not in ('done', 'dismissed')]
+pending.sort(key=lambda x: (x[1].get('first_seen', ''), x[1].get('published', '')), reverse=True)
+inbox_lines = ['# 重大新闻待看清单', '',
+               f'更新时间：{now:%Y-%m-%d %H:%M}（北京时间）',
+               '', '这是自动筛选的重大新闻**候选线索**，并非事实核查或确认的突发事件。',
+               '不会根据你是否打开 ChatGPT 自动清除。要手动归档，在 radar/handled.json 中以原始链接为键填入 "done" 或 "dismissed"。',
+               f'当前待处理：{len(pending)} 条', '']
+for url, item in pending[:100]:
+    inbox_lines += [f"### {item.get('title', '')}", '',
+                    f"- 首次收录：{item.get('first_seen', '')}｜原始发布时间：{item.get('published', '待核验')}",
+                    f"- 来源：{item.get('source', '')}｜类型：{item.get('category', '')}",
+                    f"- 来源摘录：{item.get('description') or '暂无正文，需核实'}",
+                    f"- 原始链接：{url}", '']
+if len(pending) > 100:
+    inbox_lines += [f'其余 {len(pending)-100} 条仍保存在 major-news-history.json 中。', '']
+pathlib.Path('radar/INBOX.md').write_text('\\n'.join(inbox_lines) + '\\n', encoding='utf-8')
+
+# Seven-day missed-news digest: based on first_seen, so old items aren't called new.
+cutoff = (now - dt.timedelta(days=7)).date().isoformat()
+week = [(url, item) for url, item in history.items()
+        if item.get('first_seen', '') >= cutoff]
+week.sort(key=lambda x: (x[1].get('first_seen', ''), x[1].get('published', '')), reverse=True)
+weekly_lines = ['# 最近七天重大新闻补漏', '',
+                f'生成时间：{now:%Y-%m-%d %H:%M}（北京时间）',
+                '仅为自动筛选候选，首见日期不等于事件首发日期，发布前必须核实原始内容。', '']
+for url, item in week[:60]:
+    status = '已处理' if handled.get(url) in ('done', 'dismissed') else '待看'
+    weekly_lines += [f"- **{item.get('first_seen', '')}｜{status}** [{item.get('title', '')}]({url}) — {item.get('source', '')}（原始时间：{item.get('published', '待核验')}）"]
+pathlib.Path('radar/WEEKLY.md').write_text('\\n'.join(weekly_lines) + '\\n', encoding='utf-8')
+print(f'Inbox: {len(pending)} pending, weekly: {len(week)} candidates')
+
 print(f'Created {out}, {len(entries)} candidates')
 if not entries:
     raise SystemExit('All sources returned zero items')
