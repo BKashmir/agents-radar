@@ -1,6 +1,11 @@
 name: Free Firsthand Radar
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - 'scripts/free_radar.py'
+      - '.github/workflows/free-radar.yml'
   workflow_dispatch:
   schedule:
     - cron: '17 23 * * *' # 07:17 Beijing time
