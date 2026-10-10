@@ -5,6 +5,7 @@ import json
 import pathlib
 import urllib.request
 import xml.etree.ElementTree as ET
+from urllib.parse import quote
 
 now = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
 today = now.strftime('%Y-%m-%d')
@@ -31,7 +32,16 @@ def add(source, title, link, published=''):
     seen.add(link)
     entries.append((source, title.strip(), link, published))
 
-feeds = [('Hacker News', 'https://hnrss.org/newest?q=AI'), ('arXiv AI', 'https://export.arxiv.org/rss/cs.AI'), ('arXiv ML', 'https://export.arxiv.org/rss/cs.LG')]
+feeds = [
+    ('Hacker News', 'https://hnrss.org/newest?q=AI'),
+    ('arXiv AI', 'https://export.arxiv.org/rss/cs.AI'),
+    ('arXiv ML', 'https://export.arxiv.org/rss/cs.LG'),
+    ('OpenAI 官方', 'https://openai.com/news/rss.xml'),
+    ('Google Research', 'https://research.google/blog/rss/'),
+    ('Hugging Face 博客', 'https://huggingface.co/blog/feed.xml'),
+    ('Ethereum Research', 'https://ethresear.ch/latest.rss'),
+    ('Binance 官方公告', 'https://www.binance.com/en/support/announcement/rss'),
+]
 for name, url in feeds:
     try:
         root = ET.fromstring(fetch(url))
@@ -39,6 +49,15 @@ for name, url in feeds:
             add(name, item.findtext('title', ''), item.findtext('link', ''), item.findtext('pubDate', ''))
     except Exception as exc:
         errors.append(f'{name}: {type(exc).__name__}: {exc}')
+
+# Public GitHub repository search: recent activity from original builders.
+try:
+    url = 'https://api.github.com/search/repositories?q=' + quote('topic:ai-agent pushed:>2026-10-01') + '&sort=updated&order=desc&per_page=12'
+    result = json.loads(fetch(url))
+    for project in result.get('items', []):
+        add('GitHub 开发者动态', project.get('full_name', ''), project.get('html_url', ''), project.get('pushed_at', ''))
+except Exception as exc:
+    errors.append(f'GitHub 开发者动态: {type(exc).__name__}: {exc}')
 
 for project in ['openai/openai-python', 'anthropics/anthropic-sdk-python', 'huggingface/transformers']:
     try:
