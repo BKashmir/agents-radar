@@ -6,10 +6,14 @@ import pathlib
 import urllib.request
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlparse
 
 now = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
 today = now.strftime('%Y-%m-%d')
 entries, errors, seen = [], [], set()
+MAX_AGE_HOURS = 72
+source_stats = {}
 
 # Focus on original sources, not generic AI SEO blogs.
 BLOCKED_HOSTS = {'phpscientist.com'}
@@ -23,7 +27,6 @@ def fetch(url):
 def add(source, title, link, published=''):
     if not title or not link or not link.startswith('https://') or link in seen:
         return
-    from urllib.parse import urlparse
     host = (urlparse(link).hostname or '').lower()
     if host in BLOCKED_HOSTS:
         return
@@ -35,8 +38,21 @@ def add(source, title, link, published=''):
         handle = {'X · Sam Altman': 'sama', 'X · OpenAI': 'OpenAI', 'X · Anthropic': 'AnthropicAI', 'X · Andrej Karpathy': 'karpathy', 'X · Vitalik Buterin': 'VitalikButerin', 'X · CZ': 'cz_binance'}.get(source)
         if match and handle:
             link = f'https://x.com/{handle}/status/{match.group(1)}'
+    # Reject stale content, rather than resurfacing old announcements as breaking news.
+    age_hours = None
+    if published:
+        try:
+            stamp = dt.datetime.fromisoformat(published.replace('Z', '+00:00')) if 'T' in published else parsedate_to_datetime(published)
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=dt.timezone.utc)
+            age_hours = (now - stamp.astimezone(now.tzinfo)).total_seconds() / 3600
+            if age_hours > MAX_AGE_HOURS or age_hours < -2:
+                return
+        except (ValueError, TypeError, OverflowError):
+            pass
     seen.add(link)
-    entries.append((source, title.strip(), link, published))
+    entries.append((source, title.strip(), link, published, age_hours))
+    source_stats[source] = source_stats.get(source, 0) + 1
 
 feeds = [
     ('Hacker News', 'https://hnrss.org/newest?q=AI'),
@@ -46,7 +62,6 @@ feeds = [
     ('Google Research', 'https://research.google/blog/rss/'),
     ('Hugging Face 博客', 'https://huggingface.co/blog/feed.xml'),
     ('Ethereum Research', 'https://ethresear.ch/latest.rss'),
-    ('Binance 官方公告', 'https://www.binance.com/en/support/announcement/rss'),
     ('X · Sam Altman', 'https://fxtwitter.com/sama/feed.xml'),
     ('X · OpenAI', 'https://fxtwitter.com/OpenAI/feed.xml'),
     ('X · Anthropic', 'https://fxtwitter.com/AnthropicAI/feed.xml'),
@@ -73,7 +88,8 @@ for name, url in feeds:
 
 # Public GitHub repository search: recent activity from original builders.
 try:
-    url = 'https://api.github.com/search/repositories?q=' + quote('topic:ai-agent pushed:>2026-10-01') + '&sort=updated&order=desc&per_page=12'
+    since = (now - dt.timedelta(days=3)).strftime('%Y-%m-%d')
+    url = 'https://api.github.com/search/repositories?q=' + quote('topic:ai-agent pushed:>' + since) + '&sort=updated&order=desc&per_page=12'
     result = json.loads(fetch(url))
     for project in result.get('items', []):
         add('GitHub 开发者动态', project.get('full_name', ''), project.get('html_url', ''), project.get('pushed_at', ''))
@@ -88,10 +104,15 @@ for project in ['openai/openai-python', 'anthropics/anthropic-sdk-python', 'hugg
     except Exception as exc:
         errors.append(f'{project}: {type(exc).__name__}: {exc}')
 
-lines = [f'# 一手信息雷达｜{today}', '', f'采集时间：{now:%Y-%m-%d %H:%M}（北京时间）', '', '自动采集的候选线索，尚未核实真实性、最早发布时间和重要性。', '', f'候选总数：{len(entries)}', '']
-for source, title, link, published in entries:
+entries.sort(key=lambda row: (row[4] is None, row[4] if row[4] is not None else 9999))
+lines = [f'# 一手信息雷达｜{today}', '', f'采集时间：{now:%Y-%m-%d %H:%M}（北京时间）', '', '仅收录近 72 小时可解析时间的候选线索；无法解析发布时间的条目仍保留并标记待核实。排序按来源发布时间，不等于全网首发。', '', f'候选总数：{len(entries)}', '', '## 来源状态', '']
+for source, url in feeds:
+    lines.append(f'- {source}：{source_stats.get(source, 0)} 条（0 条不代表没有新闻，也可能是源失效）')
+lines += ['', '## 暂未自动接入的平台', '', '- [币安广场](https://www.binance.com/en/square)：尚无已验证的稳定公开抓取接口，需人工核验原帖。', '- [OKX 欧易星球](https://www.okx.com/)：尚无已验证的稳定公开抓取接口，需人工核验原帖。', '- X：当前为第三方公开 RSS 尝试，能否采集以实际结果为准；不要把 0 条当作没有新帖。', '', '## 最新候选线索', '']
+for source, title, link, published, age_hours in entries:
     title = title.replace('[', '［').replace(']', '］')
-    lines.append(f'- [{title}]({link})｜{source}｜来源时间：{published or "未知"}')
+    freshness = f'{age_hours:.1f} 小时前' if age_hours is not None else '时间待核验'
+    lines.append(f'- [{title}]({link})｜{source}｜{freshness}｜来源时间：{published or "未知"}')
 lines += ['', '## 采集异常', '']
 lines += [f'- {e}' for e in errors] if errors else ['无']
 out = pathlib.Path('radar') / f'{today}.md'
