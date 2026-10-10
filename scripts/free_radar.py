@@ -10,6 +10,10 @@ now = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
 today = now.strftime('%Y-%m-%d')
 entries, errors, seen = [], [], set()
 
+# Focus on original sources, not generic AI SEO blogs.
+BLOCKED_HOSTS = {'phpscientist.com'}
+PRIORITY_TERMS = ('openai', 'anthropic', 'claude', 'gpt', 'gemini', 'deepseek', 'qwen', 'agent', 'model', 'llm', 'arxiv', 'research', 'release', 'github', 'transformer', 'benchmark')
+
 def fetch(url):
     req = urllib.request.Request(url, headers={'User-Agent': 'FirsthandRadar/1.0', 'Accept': 'application/json, application/xml, text/xml, */*'})
     with urllib.request.urlopen(req, timeout=20) as response:
@@ -17,6 +21,12 @@ def fetch(url):
 
 def add(source, title, link, published=''):
     if not title or not link or not link.startswith('https://') or link in seen:
+        return
+    from urllib.parse import urlparse
+    host = (urlparse(link).hostname or '').lower()
+    if host in BLOCKED_HOSTS:
+        return
+    if source == 'Hacker News' and not any(term in title.lower() for term in PRIORITY_TERMS):
         return
     seen.add(link)
     entries.append((source, title.strip(), link, published))
