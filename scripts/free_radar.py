@@ -141,14 +141,59 @@ for project in ['openai/openai-python', 'anthropics/anthropic-sdk-python', 'hugg
         errors.append(f'{project}: {type(exc).__name__}: {exc}')
 
 entries.sort(key=lambda row: (row[4] is None, row[4] if row[4] is not None else 9999))
-lines = [f'# 一手信息雷达｜{today}', '', f'采集时间：{now:%Y-%m-%d %H:%M}（北京时间）', '', '仅收录近 72 小时可解析时间的候选线索；无法解析发布时间的条目仍保留并标记待核实。排序按来源发布时间，不等于全网首发。', '', f'候选总数：{len(entries)}', '', '## 来源状态', '']
-for source, url in feeds:
-    lines.append(f'- {source}：{source_stats.get(source, 0)} 条（0 条不代表没有新闻，也可能是源失效）')
-lines += ['', '## 暂未自动接入的平台', '', '- [币安广场](https://www.binance.com/en/square)：尚无已验证的稳定公开抓取接口，需人工核验原帖。', '- [OKX 欧易星球](https://www.okx.com/)：尚无已验证的稳定公开抓取接口，需人工核验原帖。', '- X：当前为第三方公开 RSS 尝试，能否采集以实际结果为准；不要把 0 条当作没有新帖。', '', '## 最新候选线索', '']
-for source, title, link, published, age_hours in entries:
-    title = title.replace('[', '［').replace(']', '］')
+
+# Transparent, rule-based editorial triage; NOT an AI fact-check.
+OFFICIAL = ('X · OpenAI', 'X · Anthropic', 'X · Google DeepMind', 'X · Google AI', 'X · Mistral AI', 'X · Meta AI', 'X · Binance', 'X · OKX', 'OpenAI 官方', 'Google Research', 'Hugging Face 博客')
+FOUNDERS = ('X · Sam Altman', 'X · Elon Musk', 'X · Demis Hassabis', 'X · Sundar Pichai', 'X · Vitalik Buterin', 'X · CZ', 'X · Star Xu', 'X · Brian Armstrong', 'X · Anatoly Yakovenko')
+PROMO = ('giveaway', 'airdrop', 'referral', 'promo code', 'limited offer', 'discount', 'sponsored', 'win $', 'free money', '抽奖', '返佣', '空投领取')
+LAUNCH = ('launch', 'introduc', 'announc', 'releas', 'open sourc', 'ship', 'unveil', 'new model', 'new api', '上线', '发布', '开源', '推出', '升级')
+RESEARCH = ('paper', 'research', 'benchmark', 'arxiv', 'study', 'technical report', '论文', '研究', '基准测试')
+MARKET = ('listing', 'delist', 'token', 'mainnet', 'upgrade', 'security', 'exploit', 'hack', 'etf', '上币', '下架', '主网', '漏洞')
+REPOST = ('rt @', 'repost', 'retweeted', '转发', 'via @')
+
+def triage(row):
+    source, title, link, published, age = row
+    low = title.lower()
+    if any(word in low for word in PROMO):
+        return ('广告/营销候选', 0, '含营销关键词，需人工复核')
+    if any(low.startswith(word) for word in REPOST):
+        return ('转发/二手线索', 1, '可能不是首发，需追溯原帖')
+    original = source.startswith('X ·') or source in OFFICIAL or source in ('GitHub Release', 'arXiv AI', 'arXiv ML')
+    if source in OFFICIAL and any(word in low for word in LAUNCH):
+        return ('重点：官方发布', 5, '官方渠道 + 发布关键词；尚未核实内容')
+    if source in FOUNDERS:
+        return ('重点：创始人原话', 4, '创始人账号候选，需核验是否原创及上下文')
+    if source in ('arXiv AI', 'arXiv ML') or any(word in low for word in RESEARCH):
+        return ('研究/论文', 3, '研究线索，需检查论文原文')
+    if any(word in low for word in MARKET):
+        return ('Web3/市场动态', 3, '市场关键词，非交易建议')
+    if original:
+        return ('原始渠道动态', 3, '官方或开发者来源，未核验首发')
+    if source == 'GitHub 开发者动态':
+        return ('开发者活动', 2, '代码活跃不等于重大产品发布')
+    return ('普通线索', 1, '需要寻找原始出处')
+
+def render(row):
+    source, title, link, published, age_hours = row
+    category, score, reason = triage(row)
+    safe_title = title.replace('[', '［').replace(']', '］').replace('\\n', ' ')
     freshness = f'{age_hours:.1f} 小时前' if age_hours is not None else '时间待核验'
-    lines.append(f'- [{title}]({link})｜{source}｜{freshness}｜来源时间：{published or "未知"}')
+    return f'- [{safe_title}]({link})｜{source}｜{freshness}｜{reason}｜来源时间：{published or "未知"}'
+
+lines = [f'# 一手信息雷达｜{today}', '', f'采集时间：{now:%Y-%m-%d %H:%M}（北京时间）', '', '规则分级不是事实核查；分类基于账号和关键词，转发与广告可能漏判。只看近 72 小时可解析时间的候选，时间不明者待核验。', '', f'候选总数：{len(entries)}', '', '## 优先查看：最多 15 条', '']
+ranked = sorted(entries, key=lambda r: (-triage(r)[1], r[4] is None, r[4] if r[4] is not None else 9999))
+for row in ranked[:15]:
+    lines.append(render(row))
+lines += ['', '## 按新闻性质分类', '']
+for category in ('重点：官方发布', '重点：创始人原话', '研究/论文', 'Web3/市场动态', '原始渠道动态', '开发者活动', '普通线索', '转发/二手线索', '广告/营销候选'):
+    subset = [row for row in ranked if triage(row)[0] == category]
+    lines += [f'### {category}（{len(subset)}）', '']
+    lines += [render(row) for row in subset] if subset else ['暂无']
+    lines.append('')
+lines += ['## 来源健康状态', '']
+for source, url in feeds:
+    lines.append(f'- {source}：{source_stats.get(source, 0)} 条（0 条可能是没更新，也可能是采集失效）')
+lines += ['', '## 未完成的来源', '', '- [币安广场](https://www.binance.com/en/square)：未验证公开采集接口，尚未自动接入。', '- [OKX 欧易星球](https://www.okx.com/)：未验证公开采集接口，尚未自动接入。', '- X 依赖第三方 FxTwitter RSS，来源返回 0 条不代表账号没有发帖。', '']
 lines += ['', '## 采集异常', '']
 lines += [f'- {e}' for e in errors] if errors else ['无']
 out = pathlib.Path('radar') / f'{today}.md'
